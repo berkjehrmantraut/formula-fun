@@ -371,7 +371,7 @@ const car={x:0,z:0,h:0,y:0,th:0,seg:0};
 const START=15;
 
 function startRace(t){T=t;build(t);fogRGB=h2r(t.fog);mixC={};makeLayers();
-  gear=0;v=0;jumped=false;stallT=0;pos=START;lap=0;ci=0;taken=false;raceT=0;lapStart=0;lapTimes=[];topV=0;camYaw=0;yawBase=0;msg='';msgT=0;
+  gear=0;v=0;jumped=false;stallT=0;pos=START;lap=0;ci=0;taken=false;raceT=0;lapStart=0;lapTimes=[];topV=0;secReset();camYaw=0;yawBase=0;msg='';msgT=0;
   carRot=0;crashT=0;cdT=0;cdGo=3.2+Math.random()*.9;paused=false;state='count';carPose();car.h=0;
   ['menu','over','pause'].forEach(id=>$(id).classList.add('hidden'))}
 
@@ -406,11 +406,24 @@ function update(dt){
   const c=T.corners[ci];
   if(c){if(!taken&&pos>c.ze+2){pos=c.ze+2;carPose();crash(c,-c.dir,zoneF(c)<=0?'fast':'late');return}
     if(pos>c.end){ci++;taken=false}}
-  if(pos>=T.L){pos-=T.L;lap++;lapTimes.push(raceT-lapStart);lapStart=raceT;ci=0;taken=false;camYaw-=T.hE;car.h-=T.hE;yawBase+=T.hE;
+  if(secIdx<2&&pos>=T.L*(secIdx+1)/3){sectorDone(secIdx);secIdx++}
+  if(pos>=T.L){sectorDone(2);secPrev=secCols;secCols=[null,null,null];secIdx=0;pos-=T.L;lap++;lapTimes.push(raceT-lapStart);lapStart=raceT;ci=0;taken=false;camYaw-=T.hE;car.h-=T.hE;yawBase+=T.hE;
     if(lap>=LAPS){finish(true);return}
     say(lap===LAPS-1?'Final lap':'Lap '+(lap+1),1.4)}
   carPose();car.h+=(car.th-car.h)*Math.min(1,dt*20);camYaw+=(car.th-camYaw)*Math.min(1,dt*8);
 }
+
+/* ---------- sectors: each lap split into thirds by distance.
+   purple = fastest you have ever done that sector on this circuit, green = your best this race, yellow = slower than that */
+const SEC={purple:'#8a3fb5',green:'#3f9b4f',yellow:'#e7b031'};
+let secIdx=0,secT0=0,secCols=[null,null,null],secPrev=[null,null,null],secRace=[1/0,1/0,1/0],secRec=[false,false,false],secPop=null;
+function secReset(){secIdx=0;secT0=0;secCols=[null,null,null];secPrev=[null,null,null];secRace=[1/0,1/0,1/0];secRec=[false,false,false];secPop=null}
+function loadSec(){try{return JSON.parse(localStorage.getItem('tenlaps-sec-v1'))||{}}catch(e){return{}}}
+function sectorDone(k){const t=raceT-secT0;secT0=raceT;const all=loadSec(),ab=(all[T.id]||[1/0,1/0,1/0]).map(x=>x==null?1/0:x);let col;
+  if(t<ab[k]){col='purple';ab[k]=t;all[T.id]=ab.map(x=>isFinite(x)?x:null);secRec[k]=true;try{localStorage.setItem('tenlaps-sec-v1',JSON.stringify(all))}catch(e){}}
+  else col=t<secRace[k]?'green':'yellow';
+  if(t<secRace[k])secRace[k]=t;secCols[k]=col;secPop={k,t,col,ttl:2.2}}
+const fmtS=t=>t<60?t.toFixed(2):fmt(t);
 
 /* ---------- results, storage ---------- */
 const fmt=t=>{const m=Math.floor(t/60),s=t-m*60;return m+':'+(s<10?'0':'')+s.toFixed(1)};
@@ -423,7 +436,7 @@ function finish(done){
   $('oh').textContent=done?'Ten laps of '+T.name+' in '+fmt(raceT):crashWhy==='wrong'?'Wrong way at '+crashAt:crashWhy==='fast'?'Too fast into '+crashAt:'Into the barrier at '+crashAt;
   $('otag').classList.toggle('hidden',!better||rec.dist<50);
   const rows=[['Laps completed',lap+' of '+LAPS],['Distance',(rec.dist/1000).toFixed(2)+' km'],['Time',fmt(raceT)],
-    ['Best lap',lapTimes.length?fmt(Math.min(...lapTimes)):'None'],['Top speed',Math.round(topV*3.6)+' km/h']];
+    ['Best lap',lapTimes.length?fmt(Math.min(...lapTimes)):'None'],...[0,1,2].map(k=>['Best sector '+(k+1),isFinite(secRace[k])?(secRec[k]?'<span style="color:'+SEC.purple+';font-weight:700">Record </span>':'')+fmtS(secRace[k]):'None']),['Top speed',Math.round(topV*3.6)+' km/h']];
   $('ot').innerHTML=rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>').join('');
   $('over').classList.remove('hidden');
 }
@@ -520,19 +533,24 @@ function txt(s,x,y,font,c,al){ctx.font=font;ctx.fillStyle=c;ctx.textAlign=al||'l
 function hud(){
   const ink='#2b2622',cr='#faf6ee',mu='#655b50';
   B(ctx,cr,0,0,W,52);B(ctx,ink,0,52,W,3);B(ctx,ink,0,57,W,1);
+  {const y=60,h=14,g=3,cw=(W-32-2*g)/3;for(let k=0;k<3;k++){const x=16+k*(cw+g),cur=secCols[k],pv=secPrev[k],col=cur||pv;
+    B(ctx,ink,x,y,cw,h);if(col){ctx.globalAlpha=cur?1:.35;B(ctx,SEC[col],x+1,y+1,cw-2,h-2);ctx.globalAlpha=1}
+    txt('S'+(k+1),x+6,y+11,'700 10px '+SAN,cur&&col!=='yellow'?cr:col&&cur?ink:'#a89e8e')}}
   txt('LAP',16,20,'700 11px '+SAN,mu);txt(Math.min(lap+1,LAPS)+' of '+LAPS,16,44,'600 24px '+SER,ink);
   txt('TIME',W-16,20,'700 11px '+SAN,mu,'right');txt(fmt(raceT),W-16,44,'600 24px '+SER,ink,'right');
   if(lapTimes.length){txt('LAST LAP',W/2,20,'700 11px '+SAN,mu,'center');txt(fmt(lapTimes[lapTimes.length-1]),W/2,44,'600 24px '+SER,ink,'center')}
 
-  if(state==='count'){const x0=W/2-95;B(ctx,ink,x0,74,190,50);const lit=Math.min(5,Math.floor(cdT/.55));
-    for(let i=0;i<5;i++)O(ctx,i<lit?'#c8452f':'#4a433d',x0+27+i*34,99,12)}
+  if(state==='count'){const x0=W/2-95;B(ctx,ink,x0,90,190,50);const lit=Math.min(5,Math.floor(cdT/.55));
+    for(let i=0;i<5;i++)O(ctx,i<lit?'#c8452f':'#4a433d',x0+27+i*34,115,12)}
   const c=state==='race'?T.corners[ci]:null;
   if(c&&!taken){const z0=zsNow(c),d=Math.min(z0,c.ze)-pos,inz=pos>=z0;
     if(d<320){ctx.font='600 17px '+SER;const w=ctx.measureText(c.name).width+28,x0=W/2-w/2;
-      B(ctx,ink,x0-1,71,w+2,34);B(ctx,inz?ink:cr,x0,72,w,32);txt(c.name,W/2,94,'600 17px '+SER,inz?cr:ink,'center')}}
+      B(ctx,ink,x0-1,87,w+2,34);B(ctx,inz?ink:cr,x0,88,w,32);txt(c.name,W/2,110,'600 17px '+SER,inz?cr:ink,'center')}}
   if(state==='count'&&jumped){msg='Jumped the start';msgT=1}
   if(msgT>0&&(stallT>0||!(c&&!taken&&zsNow(c)-pos<320))){const my0=stallT>0?44:0;const my=state==='count'?62:my0,bad=state==='count'||stallT>0;ctx.font='600 20px '+SER;const w=ctx.measureText(msg).width+28;
-    B(ctx,bad?'#8e3227':ink,W/2-w/2,78+my,w,36);txt(msg,W/2,103+my,'600 20px '+SER,cr,'center')}
+    B(ctx,bad?'#8e3227':ink,W/2-w/2,94+my,w,36);txt(msg,W/2,119+my,'600 20px '+SER,cr,'center')}
+  if(secPop&&state!=='count'){const t=fmtS(secPop.t),lab='S'+(secPop.k+1)+'  '+t;ctx.font='600 20px '+SER;const w=ctx.measureText(lab).width+28,y=H-118;
+    B(ctx,ink,W/2-w/2-1,y-1,w+2,38);B(ctx,SEC[secPop.col],W/2-w/2,y,w,36);txt(lab,W/2,y+25,'600 20px '+SER,secPop.col==='yellow'?ink:cr,'center')}
 
   txt(String(Math.round(v*3.6)),16,H-30,'600 46px '+SER,cr);txt('KM/H',16,H-14,'700 11px '+SAN,cr);
   txt(stallT>0?'STALLED':gear?'GEAR':'NEUTRAL',W-16,H-14,'700 11px '+SAN,stallT>0?'#e0503f':cr,'right');
@@ -544,7 +562,7 @@ function hud(){
 let last=0;
 function frame(t){requestAnimationFrame(frame);const dt=Math.min(.05,(t-last)/1000||0);last=t;
   if(!T||state==='menu')return;
-  if(!paused){update(dt);if(msgT>0)msgT-=dt}
+  if(!paused){update(dt);if(msgT>0)msgT-=dt;if(secPop&&(secPop.ttl-=dt)<=0)secPop=null}
   engine();if(state!=='over')render()}
 
 /* ---------- sound (off by default): 8-bit square waves and 1-bit noise ---------- */
